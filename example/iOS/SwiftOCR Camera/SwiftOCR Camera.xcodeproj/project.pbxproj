@@ -14,9 +14,25 @@
 		37E120991CDA5E6B00FC2701 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 37E120971CDA5E6B00FC2701 /* Main.storyboard */; };
 		37E1209B1CDA5E6B00FC2701 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 37E1209A1CDA5E6B00FC2701 /* Assets.xcassets */; };
 		37E1209E1CDA5E6B00FC2701 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 37E1209C1CDA5E6B00FC2701 /* LaunchScreen.storyboard */; };
+		37FC9A931DDB0B8900393DC9 /* GPUImage.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 374D876A1CEE10B200952521 /* GPUImage.framework */; };
+		37FC9A941DDB0B8900393DC9 /* GPUImage.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 374D876A1CEE10B200952521 /* GPUImage.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		374D87671CEE10B200952521 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 374D87611CEE10B100952521 /* GPUImage.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = BCF1A33414DDB1EC00852800;
+			remoteInfo = GPUImage;
+		};
+		374D87691CEE10B200952521 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 374D87611CEE10B100952521 /* GPUImage.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = BCE209E51943F20C002FEED8;
+			remoteInfo = GPUImageFramework;
+		};
 		375846891CDA649E0058F3EE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 375846801CDA649D0058F3EE /* SwiftOCR.xcodeproj */;
@@ -52,6 +68,13 @@
 			remoteGlobalIDString = 373ED0AE1CC9071C00C4758B;
 			remoteInfo = SwiftOCR;
 		};
+		37FC9A951DDB0B8900393DC9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 374D87611CEE10B100952521 /* GPUImage.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = BCE209E41943F20C002FEED8;
+			remoteInfo = GPUImageFramework;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -62,6 +85,7 @@
 			dstSubfolderSpec = 10;
 			files = (
 				375846921CDA64A90058F3EE /* SwiftOCR.framework in Embed Frameworks */,
+				37FC9A941DDB0B8900393DC9 /* GPUImage.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -69,6 +93,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		374D87611CEE10B100952521 /* GPUImage.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = GPUImage.xcodeproj; path = "../../../framework/SwiftOCR/GPUImage-master/framework/GPUImage.xcodeproj"; sourceTree = "<group>"; };
 		375846801CDA649D0058F3EE /* SwiftOCR.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = SwiftOCR.xcodeproj; path = ../../../framework/SwiftOCR.xcodeproj; sourceTree = "<group>"; };
 		37E120901CDA5E6B00FC2701 /* SwiftOCR Camera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SwiftOCR Camera.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		37E120931CDA5E6B00FC2701 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -85,12 +110,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				375846911CDA64A90058F3EE /* SwiftOCR.framework in Frameworks */,
+				37FC9A931DDB0B8900393DC9 /* GPUImage.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		374D87621CEE10B100952521 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				374D87681CEE10B200952521 /* libGPUImage.a */,
+				374D876A1CEE10B200952521 /* GPUImage.framework */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		375846811CDA649D0058F3EE /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -105,6 +140,7 @@
 		37E120871CDA5E6B00FC2701 = {
 			isa = PBXGroup;
 			children = (
+				374D87611CEE10B100952521 /* GPUImage.xcodeproj */,
 				375846801CDA649D0058F3EE /* SwiftOCR.xcodeproj */,
 				37E120921CDA5E6B00FC2701 /* SwiftOCR Camera */,
 				37E120911CDA5E6B00FC2701 /* Products */,
@@ -148,6 +184,7 @@
 			);
 			dependencies = (
 				375846941CDA64A90058F3EE /* PBXTargetDependency */,
+				37FC9A961DDB0B8900393DC9 /* PBXTargetDependency */,
 			);
 			name = "SwiftOCR Camera";
 			productName = "SwiftOCR Camera";
@@ -161,12 +198,12 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 0730;
-				LastUpgradeCheck = 0730;
+				LastUpgradeCheck = 0810;
 				ORGANIZATIONNAME = "Nicolas Camenisch";
 				TargetAttributes = {
 					37E1208F1CDA5E6B00FC2701 = {
 						CreatedOnToolsVersion = 7.3;
-						DevelopmentTeam = 2VE8J8K99V;
+						LastSwiftMigration = 0810;
 					};
 				};
 			};
@@ -183,6 +220,10 @@
 			projectDirPath = "";
 			projectReferences = (
 				{
+					ProductGroup = 374D87621CEE10B100952521 /* Products */;
+					ProjectRef = 374D87611CEE10B100952521 /* GPUImage.xcodeproj */;
+				},
+				{
 					ProductGroup = 375846811CDA649D0058F3EE /* Products */;
 					ProjectRef = 375846801CDA649D0058F3EE /* SwiftOCR.xcodeproj */;
 				},
@@ -195,6 +236,20 @@
 /* End PBXProject section */
 
 /* Begin PBXReferenceProxy section */
+		374D87681CEE10B200952521 /* libGPUImage.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libGPUImage.a;
+			remoteRef = 374D87671CEE10B200952521 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		374D876A1CEE10B200952521 /* GPUImage.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = GPUImage.framework;
+			remoteRef = 374D87691CEE10B200952521 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
 		3758468A1CDA649E0058F3EE /* SwiftOCR.framework */ = {
 			isa = PBXReferenceProxy;
 			fileType = wrapper.framework;
@@ -256,6 +311,11 @@
 			name = SwiftOCR;
 			targetProxy = 375846931CDA64A90058F3EE /* PBXContainerItemProxy */;
 		};
+		37FC9A961DDB0B8900393DC9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = GPUImageFramework;
+			targetProxy = 37FC9A951DDB0B8900393DC9 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -292,8 +352,10 @@
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
@@ -338,8 +400,10 @@
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
@@ -358,6 +422,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 9.3;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 			};
@@ -366,30 +431,34 @@
 		37E120A31CDA5E6B00FC2701 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
-				EMBEDDED_CONTENT_CONTAINS_SWIFT = YES;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = "SwiftOCR Camera/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = "camenisch.nicolas.SwiftOCR-Camera";
+				PRODUCT_BUNDLE_IDENTIFIER = "camenisch.nicolas.SwiftOCR-Camera-Example";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
+				SWIFT_VERSION = 4.0;
 			};
 			name = Debug;
 		};
 		37E120A41CDA5E6B00FC2701 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
-				EMBEDDED_CONTENT_CONTAINS_SWIFT = YES;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = "SwiftOCR Camera/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = "camenisch.nicolas.SwiftOCR-Camera";
+				PRODUCT_BUNDLE_IDENTIFIER = "camenisch.nicolas.SwiftOCR-Camera-Example";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
+				SWIFT_VERSION = 4.0;
 			};
 			name = Release;
 		};

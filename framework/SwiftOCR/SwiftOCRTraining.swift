@@ -8,13 +8,13 @@
 
 import GPUImage
 
-public class SwiftOCRTraining {
+open class SwiftOCRTraining {
 
-    private let ocrInstance        = SwiftOCR()
+    fileprivate let ocrInstance        = SwiftOCR()
     
     //Training Variables
-    private let trainingImageNames = ["TrainingBackground_1.png", "TrainingBackground_2.png", "TrainingBackground_3.png", "TrainingBackground_4.png"]
-    private let trainingFontNames  = ["Arial Narrow", "Arial Narrow Bold"]
+    fileprivate let trainingImageNames = ["TrainingBackground_1.png", "TrainingBackground_2.png", "TrainingBackground_3.png", "TrainingBackground_4.png"]
+    open var trainingFontNames  = ["Arial Narrow", "Arial Narrow Bold"]
 
     public  init() {}
     
@@ -22,7 +22,7 @@ public class SwiftOCRTraining {
      Generates a training set for the neural network and uses that for training the neural network.
      */
     
-    public  func trainWithCharSet(shouldContinue: (Float) -> Bool = {_ in return true}) {
+    open  func trainWithCharSet(_ shouldContinue: @escaping (Float) -> Bool = {_ in return true}) {
         let numberOfTrainImages  = 500
         let numberOfTestImages   = 100
         let errorThreshold:Float = 2
@@ -36,14 +36,14 @@ public class SwiftOCRTraining {
         let testAnswers  =  testData.map({return $0.1})
 
         do {
-            try globalNetwork.train(inputs: trainInputs, answers: trainAnswers, testInputs: testInputs, testAnswers: testAnswers, errorThreshold: errorThreshold, shouldContinue: {error in shouldContinue(error)})
+            _ = try globalNetwork.train(inputs: trainInputs, answers: trainAnswers, testInputs: testInputs, testAnswers: testAnswers, errorThreshold: errorThreshold, shouldContinue: {error in shouldContinue(error)})
             saveOCR()
         } catch {
             print(error)
         }
 
     }
-    
+
     /**
      Generates realistic images OCR and converts them to a float array.
      
@@ -51,12 +51,12 @@ public class SwiftOCRTraining {
      - Returns:        An array containing the input and answers for the neural network.
      */
     
-    private func generateRealisticCharSet(size: Int) -> [([Float],[Float])] {
-        
+    fileprivate func generateRealisticCharSet(_ size: Int) -> [([Float],[Float])] {
         var trainingSet = [([Float],[Float])]()
         
         let randomCode: () -> String = {
             let randomCharacter: () -> String = {
+                
                 let charArray = Array(recognizableCharacters.characters)
                 let randomDouble = Double(arc4random())/(Double(UINT32_MAX) + 1)
                 let randomIndex  = Int(floor(randomDouble * Double(charArray.count)))
@@ -88,14 +88,15 @@ public class SwiftOCRTraining {
             return OCRFont(name: randomFontName(), size: 45 + randomFloat(5))!
         }
     
-        let randomFontAttributes: () -> [String:NSObject] = {
-            let paragraphStyle = NSParagraphStyle.defaultParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
-            paragraphStyle.alignment = NSTextAlignment.Center
+        let randomFontAttributes: () -> [NSAttributedString.Key: Any] = {
             
-            return [NSFontAttributeName: randomFont(),
-                    NSKernAttributeName: CGFloat(8),
-                    NSForegroundColorAttributeName: OCRColor(red: 27/255 + randomFloat(0.2), green: 16/255 + randomFloat(0.2), blue: 16/255 + randomFloat(0.2), alpha: 80/100 + randomFloat(0.2)),
-                    NSParagraphStyleAttributeName: paragraphStyle]
+            let paragraphStyle       = NSParagraphStyle.default.mutableCopy() as! NSMutableParagraphStyle
+            paragraphStyle.alignment = NSTextAlignment.center
+            
+            return [.font: randomFont(),
+                    .kern: CGFloat(8) as NSObject,
+                    .foregroundColor: OCRColor(red: 27/255 + randomFloat(0.2), green: 16/255 + randomFloat(0.2), blue: 16/255 + randomFloat(0.2), alpha: 80/100 + randomFloat(0.2)),
+                    .paragraphStyle: paragraphStyle]
         }
         
         //Image
@@ -108,9 +109,9 @@ public class SwiftOCRTraining {
         
         let randomImage: () -> OCRImage = {
             #if os(iOS)
-                return OCRImage(named: randomImageName(), inBundle: NSBundle(forClass: SwiftOCR.self), compatibleWithTraitCollection: nil)!.copy() as! OCRImage
+                return OCRImage(named: randomImageName(), in: Bundle(for: SwiftOCR.self), compatibleWith: nil)!.copy() as! OCRImage
             #else
-                return OCRImage(byReferencingURL: NSBundle(forClass: SwiftOCR.self).URLForResource(randomImageName(), withExtension: nil, subdirectory: nil, localization: nil)!).copy() as! OCRImage
+                return OCRImage(byReferencing: Bundle(for: SwiftOCR.self).url(forResource: randomImageName(), withExtension: nil, subdirectory: nil, localization: nil)!).copy() as! OCRImage
             #endif
         }
         
@@ -119,23 +120,23 @@ public class SwiftOCRTraining {
                 let randomImg = randomImage()
                 
                 UIGraphicsBeginImageContext(randomImg.size)
-                randomImg.drawInRect(CGRect(origin: CGPoint.zero, size: randomImg.size))
+                randomImg.draw(in: CGRect(origin: CGPoint.zero, size: randomImg.size))
                 
-                NSString(string: code).drawInRect(CGRect(origin: CGPointMake(0 + randomFloat(5), -15.5 + randomFloat(5)), size: randomImg.size), withAttributes: randomFontAttributes())
+                NSString(string: code).draw(in: CGRect(origin: CGPoint(x: 0 + randomFloat(5), y: -15.5 + randomFloat(5)), size: randomImg.size), withAttributes: randomFontAttributes())
                 
                 let customImage = UIGraphicsGetImageFromCurrentImageContext()
                 UIGraphicsEndImageContext()
                 
-                return customImage
+                return customImage!
             }
         #else
             let customImage: (String) -> OCRImage = { code in
                 let randomImg = randomImage()
                 randomImg.lockFocus()
                 
-                randomImg.drawInRect(CGRect(origin: CGPoint.zero, size: randomImg.size))
+                randomImg.draw(in: CGRect(origin: CGPoint.zero, size: randomImg.size))
                 
-                NSString(string: code).drawInRect(CGRect(origin: CGPointMake(0 + randomFloat(5), -15.5 + randomFloat(5)), size: randomImg.size), withAttributes: randomFontAttributes())
+                NSString(string: code).draw(in: CGRect(origin: CGPoint(x: 0 + randomFloat(5), y: -15.5 + randomFloat(5)), size: randomImg.size), withAttributes: randomFontAttributes())
                 
                 randomImg.unlockFocus()
 
@@ -143,8 +144,6 @@ public class SwiftOCRTraining {
             }
         #endif
 
-        
-        
         
         for _ in 0..<size {
 
@@ -164,20 +163,20 @@ public class SwiftOCRTraining {
             affineTransform.d  = 1.05 + (       CGFloat(arc4random())/CGFloat(UINT32_MAX) * 0.1 )
             
             transformFilter.affineTransform = affineTransform
-            transformImage.addTarget(transformFilter)
+            transformImage?.addTarget(transformFilter)
             
             transformFilter.useNextFrameForImageCapture()
-            transformImage.processImage()
+            transformImage?.processImage()
             
-            var transformedImage:OCRImage? = transformFilter.imageFromCurrentFramebufferWithOrientation(.Up)
+            var transformedImage:OCRImage? = transformFilter.imageFromCurrentFramebuffer(with: .up)
             
-            while transformedImage?.size == CGSize.zero {
+            while transformedImage == nil || transformedImage?.size == CGSize.zero {
                 transformFilter.useNextFrameForImageCapture()
-                transformImage.processImage()
-                transformedImage = transformFilter.imageFromCurrentFramebufferWithOrientation(.Up)
+                transformImage?.processImage()
+                transformedImage = transformFilter.imageFromCurrentFramebuffer(with: .up)
             }
             
-            let distortedImage = ocrInstance.preprocessImageForOCR(transformedImage)
+            let distortedImage = ocrInstance.preprocessImageForOCR(transformedImage!)
             
             //Generate Training set
             
@@ -191,8 +190,8 @@ public class SwiftOCRTraining {
                     
                     let imageData = ocrInstance.convertImageToFloatArray(blob.0)
                     
-                    var imageAnswer = [Float](count: recognizableCharacters.characters.count, repeatedValue: 0)
-                    if let index = Array(recognizableCharacters.characters).indexOf(Array(code.characters)[blobIndex]) {
+                    var imageAnswer = [Float](repeating: 0, count: recognizableCharacters.characters.count)
+                    if let index = Array(recognizableCharacters.characters).index(of: Array(code.characters)[blobIndex]) {
                         imageAnswer[index] = 1
                     }
                     
@@ -208,21 +207,108 @@ public class SwiftOCRTraining {
     }
     
     /**
+     Converts images to a float array for training.
+     
+     - Parameter images: The number of images to generate. This does **not** correspond to the the count of elements in the array that gets returned.
+     - Parameter withNumberOfDistortions: How many distorted images should get generated from each input image.
+     - Returns:        An array containing the input and answers for the neural network.
+     */
+    
+    fileprivate func generateCharSetFromImages(_ images: [(image: OCRImage, characters: [Character])], withNumberOfDistortions distortions: Int) -> [([Float],[Float])] {
+        
+        var trainingSet = [([Float],[Float])]()
+        
+        let randomFloat: (CGFloat) -> CGFloat = { modi in
+            return  (0 - modi) + CGFloat(arc4random()) / CGFloat(UINT32_MAX) * (modi * 2)
+        }
+        
+        for (image, characters) in images {
+            
+            var imagesToExtractBlobsFrom = [OCRImage]()
+            
+            //Original
+            imagesToExtractBlobsFrom.append(ocrInstance.preprocessImageForOCR(image))
+            
+            //Distortions
+            for _ in 0..<distortions {
+                let transformImage  = GPUImagePicture(image: image)
+                let transformFilter = GPUImageTransformFilter()
+                
+                var affineTransform = CGAffineTransform()
+                
+                affineTransform.a  = 1.05 + (       CGFloat(arc4random())/CGFloat(UINT32_MAX) * 0.1 )
+                affineTransform.b  = 0    + (0.01 - CGFloat(arc4random())/CGFloat(UINT32_MAX) * 0.02)
+                affineTransform.c  = 0    + (0.03 - CGFloat(arc4random())/CGFloat(UINT32_MAX) * 0.06)
+                affineTransform.d  = 1.05 + (       CGFloat(arc4random())/CGFloat(UINT32_MAX) * 0.1 )
+                
+                affineTransform.a  = 1.05 + (randomFloat(0.05) + 0.05)
+                affineTransform.b  = 0    + (randomFloat(0.01))
+                affineTransform.c  = 0    + (randomFloat(0.03))
+                affineTransform.d  = 1.05 + (randomFloat(0.1) + 0.05)
+                
+                transformFilter.affineTransform = affineTransform
+                transformImage?.addTarget(transformFilter)
+                
+                transformFilter.useNextFrameForImageCapture()
+                transformImage?.processImage()
+                
+                var transformedImage:OCRImage? = transformFilter.imageFromCurrentFramebuffer(with: .up)
+                
+                while transformedImage == nil || transformedImage?.size == CGSize.zero {
+                    transformFilter.useNextFrameForImageCapture()
+                    transformImage?.processImage()
+                    transformedImage = transformFilter.imageFromCurrentFramebuffer(with: .up)
+                }
+                
+                let distortedImage = ocrInstance.preprocessImageForOCR(transformedImage!)
+                imagesToExtractBlobsFrom.append(distortedImage)
+            }
+            
+            //Convert to data
+            
+            for preprocessedImage in imagesToExtractBlobsFrom {
+                
+                let blobs = ocrInstance.extractBlobs(preprocessedImage)
+                
+                if blobs.count == characters.count {
+                    
+                    for (blobIndex, blob) in blobs.enumerated() {
+                        let imageData = ocrInstance.convertImageToFloatArray(blob.0)
+                        
+                        var imageAnswer = [Float](repeating: 0, count: recognizableCharacters.characters.count)
+                        if let index = Array(recognizableCharacters.characters).index(of: characters[blobIndex]) {
+                            imageAnswer[index] = 1
+                        }
+                        
+                        trainingSet.append((imageData,imageAnswer))
+                    }
+                }
+            }
+            
+            
+        }
+        
+        trainingSet.shuffle()
+        
+        return trainingSet
+    }
+
+    /**
      Saves the neural network to a file.
      */
     
-    public   func saveOCR() {
+    open   func saveOCR() {
         //Set this path to the location of your OCR-Network file.
-        let path = NSString(string:"~/Desktop/OCR-Network").stringByExpandingTildeInPath
-        globalNetwork.writeToFile(NSURL(string: "file://\(path)")!)
+        let path = NSString(string:"~/Desktop/OCR-Network").expandingTildeInPath
+        globalNetwork.writeToFile(URL(string: "file://\(path)")!)
     }
     
     /**
      Use this method to test the neural network.
      */
     
-    public   func testOCR(completionHandler: (Double) -> Void) {
-        let testData  = generateRealisticCharSet(25)
+    open   func testOCR(_ completionHandler: (Double) -> Void) {
+        let testData  = generateRealisticCharSet(recognizableCharacters.characters.count)
         
         var correctCount = 0
         var totalCount   = 0
@@ -232,8 +318,8 @@ public class SwiftOCRTraining {
             do {
                 let networkResult = try globalNetwork.update(inputs: i.0)
                 
-                let input      = Array(recognizableCharacters.characters)[i.1.indexOf(1)!]
-                let recognized = Array(recognizableCharacters.characters)[networkResult.indexOf(networkResult.maxElement() ?? 0) ?? 0]
+                let input      = Array(recognizableCharacters.characters)[i.1.index(of: 1)!]
+                let recognized = Array(recognizableCharacters.characters)[networkResult.index(of: networkResult.max() ?? 0) ?? 0]
                 
                 print(input, recognized)
                 

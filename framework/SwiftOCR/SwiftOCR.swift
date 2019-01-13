@@ -6,85 +6,151 @@
 //  Copyright © 2016 Nicolas Camenisch. All rights reserved.
 //
 
-import CoreGraphics
-
 import GPUImage
 
-internal var recognizableCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+fileprivate func < <T : Comparable>(lhs: T?, rhs: T?) -> Bool {
+    switch (lhs, rhs) {
+    case let (l?, r?):
+        return l < r
+    case (nil, _?):
+        return true
+    default:
+        return false
+    }
+}
 
-internal var globalNetwork = FFNN.fromFile(NSBundle(forClass: SwiftOCR.self).URLForResource("OCR-Network", withExtension: nil, subdirectory: nil, localization: nil)!) ?? FFNN(inputs: 321, hidden: 100, outputs: recognizableCharacters.characters.count, learningRate: 0.7, momentum: 0.4, weights: nil, activationFunction: .Sigmoid, errorFunction: .CrossEntropy(average: false))
+fileprivate func >= <T : Comparable>(lhs: T?, rhs: T?) -> Bool {
+    switch (lhs, rhs) {
+    case let (l?, r?):
+        return l >= r
+    default:
+        return !(lhs < rhs)
+    }
+}
 
-public class SwiftOCR {
+///The characters the globalNetwork can recognize.
+///It **must** be in the **same order** as the network got trained
+public var recognizableCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+///The FFNN network used for OCR
+public var globalNetwork = FFNN.fromFile(Bundle(for: SwiftOCR.self).url(forResource: "OCR-Network", withExtension: nil)!)!
+
+open class SwiftOCR {
     
-    ///The image used for OCR
-    public      var image:OCRImage?
+	fileprivate		var characters = recognizableCharacters
+	fileprivate     var network = globalNetwork
+	
+    //MARK: Setup
     
-    private     var network = globalNetwork
+    ///SwiftOCR's delegate
+    open weak var delegate: SwiftOCRDelegate?
     
-    public weak var delegate:SwiftOCRDelegate?
-    public      var currentOCRRecognizedBlobs = [SwiftOCRRecognizedBlob]()
+    ///Radius in x axis for merging blobs
+    open      var xMergeRadius:CGFloat = 1
+    ///Radius in y axis for merging blobs
+    open      var yMergeRadius:CGFloat = 3
     
+    ///Only recognize characters on White List
+    open      var characterWhiteList: String? = nil
+    ///Don't recognize characters on Black List
+    open      var characterBlackList: String? = nil
+    
+    ///Confidence must be bigger than the threshold
+    open      var confidenceThreshold:Float = 0.1
+    
+    //MARK: Recognition data
+    
+    ///All SwiftOCRRecognizedBlob from the last recognition
+    open      var currentOCRRecognizedBlobs = [SwiftOCRRecognizedBlob]()
+    
+    
+    //MARK: Init
     public   init(){}
     
-    public   init(image: OCRImage, delegate: SwiftOCRDelegate?, _ completionHandler: (String) -> Void){
-        self.image    = image
-        self.delegate = delegate
-        self.recognize(completionHandler)
-    }
-    
+	public   init(recognizableCharacters: String, network: FFNN) {
+		self.characters = recognizableCharacters
+		self.network = network
+	}
+	
+	public   init(image: OCRImage, delegate: SwiftOCRDelegate?, _ completionHandler: @escaping (String) -> Void){
+		self.delegate = delegate
+		self.recognize(image, completionHandler)
+	}
+	
+	public   init(recognizableCharacters: String, network: FFNN, image: OCRImage, delegate: SwiftOCRDelegate?, _ completionHandler: @escaping (String) -> Void) {
+		self.characters = recognizableCharacters
+		self.network = network
+		self.delegate = delegate
+		self.recognize(image, completionHandler)
+	}
+	
     /**
      
-     Performs ocr on `SwiftOCR().image`.
+     Performs ocr on the image.
      
+     - Parameter image:             The image used for OCR
      - Parameter completionHandler: The completion handler that gets invoked after the ocr is finished.
      
      */
     
-    public   func recognize(completionHandler: (String) -> Void){
+    open   func recognize(_ image: OCRImage, _ completionHandler: @escaping (String) -> Void){
         
-        let confidenceThreshold:Float = 0.1 //Confidence must be bigger than the threshold
+        func indexToCharacter(_ index: Int) -> Character {
+            return Array(characters.characters)[index]
+        }
         
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), {
-            guard let imageToRecognize = self.image else {
-                print("You first have to set a SwiftOCR().image")
-                completionHandler(String())
-                return
-            }
+        func checkWhiteAndBlackListForCharacter(_ character: Character) -> Bool {
+            let whiteList =   characterWhiteList?.characters.contains(character) ?? true
+            let blackList = !(characterBlackList?.characters.contains(character) ?? false)
             
-            guard let preprocessedImage = self.delegate?.preprocessImageForOCR(imageToRecognize) ?? self.preprocessImageForOCR(imageToRecognize) else {
-                print("There was an error while preprocessing the image for SwiftOCR")
-                completionHandler(String())
-                return
-            }
+            return whiteList && blackList
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let preprocessedImage      = self.delegate?.preprocessImageForOCR(image) ?? self.preprocessImageForOCR(image)
             
             let blobs                  = self.extractBlobs(preprocessedImage)
             var recognizedString       = ""
             var ocrRecognizedBlobArray = [SwiftOCRRecognizedBlob]()
             
             for blob in blobs {
-                
                 do {
                     let blobData       = self.convertImageToFloatArray(blob.0, resize: true)
                     let networkResult  = try self.network.update(inputs: blobData)
                     
-                    if networkResult.maxElement() >= confidenceThreshold {
-                        let recognizedChar = Array(recognizableCharacters.characters)[networkResult.indexOf(networkResult.maxElement() ?? 0) ?? 0]
-                        recognizedString.append(recognizedChar)
+                    //Generate Output Character
+                    if networkResult.max() >= self.confidenceThreshold {
+                       
+                        /*
+                         let recognizedChar = Array(characters.characters)[networkResult.indexOf(networkResult.maxElement() ?? 0) ?? 0]
+                         recognizedString.append(recognizedChar)
+                         */
+                        
+                        for (networkIndex, _) in networkResult.enumerated().sorted(by: { $0.element > $1.element }) {
+                            let character = indexToCharacter(networkIndex)
+                            
+                            guard checkWhiteAndBlackListForCharacter(character) else {
+                                continue
+                            }
+                            
+                            recognizedString.append(character)
+                            break
+                        }
                     }
                     
                     //Generate SwiftOCRRecognizedBlob
                     
                     var ocrRecognizedBlobCharactersWithConfidenceArray = [(character: Character, confidence: Float)]()
-                    let ocrRecognizedBlobConfidenceThreshold = networkResult.reduce(0, combine: +)/Float(networkResult.count)
+                    let ocrRecognizedBlobConfidenceThreshold = networkResult.reduce(0, +)/Float(networkResult.count)
                     
                     for networkResultIndex in 0..<networkResult.count {
                         let characterConfidence = networkResult[networkResultIndex]
-                        let character           = Array(recognizableCharacters.characters)[networkResultIndex]
+                        let character           = indexToCharacter(networkResultIndex)
                         
-                        if characterConfidence >= ocrRecognizedBlobConfidenceThreshold {
-                            ocrRecognizedBlobCharactersWithConfidenceArray.append((character: character, confidence: characterConfidence))
+                        guard characterConfidence >= ocrRecognizedBlobConfidenceThreshold && checkWhiteAndBlackListForCharacter(character) else {
+                            continue
                         }
                         
+                        ocrRecognizedBlobCharactersWithConfidenceArray.append((character: character, confidence: characterConfidence))
                     }
                     
                     let currentRecognizedBlob = SwiftOCRRecognizedBlob(charactersWithConfidence: ocrRecognizedBlobCharactersWithConfidenceArray, boundingBox: blob.1)
@@ -99,90 +165,34 @@ public class SwiftOCR {
             
             self.currentOCRRecognizedBlobs = ocrRecognizedBlobArray
             completionHandler(recognizedString)
-        })
-        
+        }
     }
     
     /**
      
-     Performs ocr on `SwiftOCR().image` in a specified rect.
+     Performs ocr on the image in a specified rect.
      
+     - Parameter image:             The image used for OCR
      - Parameter rect:              The rect in which recognition should take place.
      - Parameter completionHandler: The completion handler that gets invoked after the ocr is finished.
      
      */
     
-    public   func recognizeInRect(rect: CGRect, completionHandler: (String) -> Void){
-        
-        let confidenceThreshold:Float = 0.1 //Confidence must be bigger than the threshold
-
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), {
-            guard let imageToRecognize = self.image else {
-                print("You first have to set a SwiftOCR().image")
-                completionHandler(String())
-                return
-            }
-            
+    open   func recognizeInRect(_ image: OCRImage, rect: CGRect, completionHandler: @escaping (String) -> Void){
+        DispatchQueue.global(qos: .userInitiated).async {
             #if os(iOS)
-                let cgImage        = imageToRecognize.CGImage
-                let croppedCGImage = CGImageCreateWithImageInRect(cgImage, rect)!
-                let croppedImage   = OCRImage(CGImage: croppedCGImage)
+                let cgImage        = image.cgImage
+                let croppedCGImage = cgImage?.cropping(to: rect)!
+                let croppedImage   = OCRImage(cgImage: croppedCGImage!)
             #else
-                let cgImage        = imageToRecognize.CGImageForProposedRect(nil, context: nil, hints: nil)
-                let croppedCGImage = CGImageCreateWithImageInRect(cgImage, rect)!
-                let croppedImage   = OCRImage(CGImage: croppedCGImage, size: rect.size)
+                let cgImage        = image.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+                let croppedCGImage = cgImage.cropping(to: rect)!
+                let croppedImage   = OCRImage(cgImage: croppedCGImage, size: rect.size)
             #endif
             
-            guard let preprocessedImage = self.delegate?.preprocessImageForOCR(croppedImage) ?? self.preprocessImageForOCR(croppedImage)else {
-                print("There was an error while preprocessing the image for SwiftOCR")
-                completionHandler(String())
-                return
-            }
+            self.recognize(croppedImage, completionHandler)
             
-            let blobs                  = self.extractBlobs(preprocessedImage)
-            var recognizedString       = ""
-            var ocrRecognizedBlobArray = [SwiftOCRRecognizedBlob]()
-            
-            for blob in blobs {
-                
-                do {
-                    let blobData       = self.convertImageToFloatArray(blob.0, resize: true)
-                    let networkResult  = try self.network.update(inputs: blobData)
-                    
-                    if networkResult.maxElement() >= confidenceThreshold {
-                        let recognizedChar = Array(recognizableCharacters.characters)[networkResult.indexOf(networkResult.maxElement() ?? 0) ?? 0]
-                        recognizedString.append(recognizedChar)
-                    }
-                    
-                    //Generate SwiftOCRRecognizedBlob
-                    
-                    var ocrRecognizedBlobCharactersWithConfidenceArray = [(character: Character, confidence: Float)]()
-                    let ocrRecognizedBlobConfidenceThreshold = networkResult.reduce(0, combine: +)/Float(networkResult.count)
-                    
-                    for networkResultIndex in 0..<networkResult.count {
-                        let characterConfidence = networkResult[networkResultIndex]
-                        let character           = Array(recognizableCharacters.characters)[networkResultIndex]
-                        
-                        if characterConfidence >= ocrRecognizedBlobConfidenceThreshold {
-                            ocrRecognizedBlobCharactersWithConfidenceArray.append((character: character, confidence: characterConfidence))
-                        }
-                        
-                    }
-                    
-                    let currentRecognizedBlob = SwiftOCRRecognizedBlob(charactersWithConfidence: ocrRecognizedBlobCharactersWithConfidenceArray, boundingBox: blob.1)
-                    
-                    ocrRecognizedBlobArray.append(currentRecognizedBlob)
-                    
-                } catch {
-                    print(error)
-                }
-                
-            }
-            
-            self.currentOCRRecognizedBlobs = ocrRecognizedBlobArray
-            completionHandler(recognizedString)
-        })
-        
+        }
     }
     
     /**
@@ -194,234 +204,273 @@ public class SwiftOCR {
      
      */
     
-    internal func extractBlobs(image:OCRImage?) -> [(OCRImage, CGRect)] {
-        if let inputImage = image ?? self.image {
-            
-            #if os(iOS)
-                let pixelData = CGDataProviderCopyData(CGImageGetDataProvider(inputImage.CGImage))
-                let bitmapData: UnsafePointer<UInt8> = CFDataGetBytePtr(pixelData)
-                let cgImage   = inputImage.CGImage
-            #else
-                let bitmapRep = NSBitmapImageRep(data: inputImage.TIFFRepresentation!)!
-                let bitmapData: UnsafeMutablePointer<UInt8> = bitmapRep.bitmapData
-                let cgImage   = bitmapRep.CGImage
-            #endif
-            
-            let numberOfComponents = CGImageGetBitsPerPixel(cgImage) / CGImageGetBitsPerComponent(cgImage)
-            
-            //data <- bitmapData
-            let bytesPerRow = CGImageGetBytesPerRow(cgImage)
-            let inputImageHeight = CGImageGetHeight(cgImage)
-            let inputImageWidth  = bytesPerRow / numberOfComponents
-            var data = [UInt16](count: bytesPerRow * Int(inputImageHeight), repeatedValue: 0)
-            
-            for dataIndex in 0..<data.count {
-                data[dataIndex] = bitmapData[dataIndex] < 127 ? 0 : 255
+    internal func extractBlobs(_ image: OCRImage) -> [(OCRImage, CGRect)] {
+        
+        #if os(iOS)
+            let pixelData = image.cgImage?.dataProvider?.data
+            let bitmapData: UnsafePointer<UInt8> = CFDataGetBytePtr(pixelData)
+            let cgImage   = image.cgImage
+        #else
+            let bitmapRep = NSBitmapImageRep(data: image.tiffRepresentation!)!
+            let bitmapData: UnsafeMutablePointer<UInt8> = bitmapRep.bitmapData!
+            let cgImage   = bitmapRep.cgImage
+        #endif
+        
+        //data <- bitmapData
+        
+        let numberOfComponents = (cgImage?.bitsPerPixel)! / (cgImage?.bitsPerComponent)!
+        let bytesPerRow        = cgImage?.bytesPerRow
+        let imageHeight        = cgImage?.height
+        let imageWidth         = bytesPerRow! / numberOfComponents
+        
+        var data = [[UInt16]](repeating: [UInt16](repeating: 0, count: Int(imageWidth)), count: Int(imageHeight!))
+        
+        let yBitmapDataIndexStride = Array(stride(from: 0, to: imageHeight!*bytesPerRow!, by: bytesPerRow!)).enumerated()
+        let xBitmapDataIndexStride = Array(stride(from: 0, to: imageWidth*numberOfComponents, by: numberOfComponents)).enumerated()
+        
+        for (y, yBitmapDataIndex) in yBitmapDataIndexStride {
+            for (x, xBitmapDataIndex) in xBitmapDataIndexStride {
+                let bitmapDataIndex = yBitmapDataIndex + xBitmapDataIndex
+                data[y][x] = bitmapData[bitmapDataIndex] < 127 ? 0 : 255
             }
-            
-            let yPixelInfoStride = Array(0.stride(to: inputImageHeight*bytesPerRow, by: bytesPerRow)).enumerate()
-            let xPixelInfoStride = Array(0.stride(to: inputImageWidth*numberOfComponents, by: numberOfComponents)).enumerate()
-            
-            //MARK: First Pass
-            
-            var currentLabel:UInt16 = 0 {
-                didSet {
-                    if currentLabel == 255 {
-                        currentLabel = 256
-                    }
+        }
+        
+        //MARK: First Pass
+        
+        var currentLabel:UInt16 = 0 {
+            didSet {
+                if currentLabel == 255 {
+                    currentLabel = 256
                 }
             }
-            var labelsUnion = UnionFind<UInt16>()
-            
-            for (y, yPixelInfo) in yPixelInfoStride {
-                for (x, xPixelInfo) in xPixelInfoStride {
-                    let pixelInfo  = yPixelInfo + xPixelInfo
-                    
-                    let pixelIndex:(Int, Int) -> Int = {inputX, inputY in
-                        return pixelInfo - ((x-inputX)*numberOfComponents) - ((y-inputY)*bytesPerRow)
-                    }
-                    
-                    if data[pixelInfo] == 0 { //Is Black
-                        if x == 0 { //Left no pixel
-                            if y == 0 { //Top no pixel
+        }
+        var labelsUnion = UnionFind<UInt16>()
+        
+        for y in 0..<Int(imageHeight!) {
+            for x in 0..<Int(imageWidth) {
+                
+                if data[y][x] == 0 { //Is Black
+                    if x == 0 { //Left no pixel
+                        if y == 0 { //Top no pixel
+                            currentLabel += 1
+                            labelsUnion.addSetWith(currentLabel)
+                            data[y][x] = currentLabel
+                        } else if y > 0 { //Top pixel
+                            if data[y - 1][x] != 255 { //Top Label
+                                data[y][x] = data[y - 1][x]
+                            } else { //Top no Label
                                 currentLabel += 1
                                 labelsUnion.addSetWith(currentLabel)
-                                data[pixelInfo] = currentLabel
-                            } else if y > 0 { //Top pixel
-                                if data[pixelIndex(x, y-1)] != 255 { //Top Label
-                                    data[pixelInfo] = data[pixelIndex(x, y-1)]
+                                data[y][x] = currentLabel
+                            }
+                        }
+                    } else { //Left pixel
+                        if y == 0 { //Top no pixel
+                            if data[y][x - 1] != 255 { //Left Label
+                                data[y][x] = data[y][x - 1]
+                            } else { //Left no Label
+                                currentLabel += 1
+                                labelsUnion.addSetWith(currentLabel)
+                                data[y][x] = currentLabel
+                            }
+                        } else if y > 0 { //Top pixel
+                            if data[y][x - 1] != 255 { //Left Label
+                                if data[y - 1][x] != 255 { //Top Label
+                                    
+                                    if data[y - 1][x] != data[y][x - 1] {
+                                        labelsUnion.unionSetsContaining(data[y - 1][x], and: data[y][x - 1])
+                                    }
+                                    
+                                    data[y][x] = data[y - 1][x]
+                                } else { //Top no Label
+                                    data[y][x] = data[y][x - 1]
+                                }
+                            } else { //Left no Label
+                                if data[y - 1][x] != 255 { //Top Label
+                                    data[y][x] = data[y - 1][x]
                                 } else { //Top no Label
                                     currentLabel += 1
                                     labelsUnion.addSetWith(currentLabel)
-                                    data[pixelInfo] = currentLabel
-                                }
-                            }
-                        } else { //Left pixel
-                            if y == 0 { //Top no pixel
-                                if data[pixelIndex(x-1,y)] != 255 { //Left Label
-                                    data[pixelInfo] = data[pixelIndex(x-1,y)]
-                                } else { //Left no Label
-                                    currentLabel += 1
-                                    labelsUnion.addSetWith(currentLabel)
-                                    data[pixelInfo] = currentLabel
-                                }
-                            } else if y > 0 { //Top pixel
-                                if data[pixelIndex(x-1,y)] != 255 { //Left Label
-                                    if data[pixelIndex(x,y-1)] != 255 { //Top Label
-                                        
-                                        if data[pixelIndex(x,y-1)] != data[pixelIndex(x-1,y)] {
-                                            labelsUnion.unionSetsContaining(data[pixelIndex(x,y-1)], and: data[pixelIndex(x-1,y)])
-                                        }
-                                        
-                                        data[pixelInfo] = data[pixelIndex(x,y-1)]
-                                    } else { //Top no Label
-                                        data[pixelInfo] = data[pixelIndex(x-1,y)]
-                                    }
-                                } else { //Left no Label
-                                    if data[pixelIndex(x,y-1)] != 255 { //Top Label
-                                        data[pixelInfo] = data[pixelIndex(x,y-1)]
-                                    } else { //Top no Label
-                                        currentLabel += 1
-                                        labelsUnion.addSetWith(currentLabel)
-                                        data[pixelInfo] = currentLabel
-                                    }
+                                    data[y][x] = currentLabel
                                 }
                             }
                         }
                     }
+                }
+                
+            }
+        }
+        
+        //MARK: Second Pass
+        
+        let parentArray = Array(Set(labelsUnion.parent))
+        
+        var labelUnionSetOfXArray = Dictionary<UInt16, Int>()
+        
+        for label in 0...currentLabel {
+            if label != 255 {
+                labelUnionSetOfXArray[label] = parentArray.index(of: labelsUnion.setOf(label) ?? 255)
+            }
+        }
+        
+        for y in 0..<Int(imageHeight!) {
+            for x in 0..<Int(imageWidth) {
+                
+                let luminosity = data[y][x]
+                
+                if luminosity != 255 {
+                    data[y][x] = UInt16(labelUnionSetOfXArray[luminosity] ?? 255)
+                }
+                
+            }
+        }
+        
+        //MARK: MinX, MaxX, MinY, MaxY
+        
+        var minMaxXYLabelDict = Dictionary<UInt16, (minX: Int, maxX: Int, minY: Int, maxY: Int)>()
+        
+        for label in 0..<parentArray.count {
+            minMaxXYLabelDict[UInt16(label)] = (minX: Int(imageWidth), maxX: 0, minY: Int(imageHeight!), maxY: 0)
+        }
+        
+        for y in 0..<Int(imageHeight!) {
+            for x in 0..<Int(imageWidth) {
+                
+                let luminosity = data[y][x]
+                
+                if luminosity != 255 {
+                    
+                    var value = minMaxXYLabelDict[luminosity]!
+                    
+                    value.minX = min(value.minX, x)
+                    value.maxX = max(value.maxX, x)
+                    value.minY = min(value.minY, y)
+                    value.maxY = max(value.maxY, y)
+                    
+                    minMaxXYLabelDict[luminosity] = value
                     
                 }
+                
             }
+        }
+        
+        //MARK: Merge labels
+        
+        var mergeLabelRects = [CGRect]()
+        
+        for label in minMaxXYLabelDict.keys {
+            let value = minMaxXYLabelDict[label]!
             
-            //MARK: Second Pass
+            let minX = value.minX
+            let maxX = value.maxX
+            let minY = value.minY
+            let maxY = value.maxY
             
-            let parentArray = Array(labelsUnion.parent.uniq())
+            //Filter blobs
             
-            var labelUnionSetOfXArray = Dictionary<UInt16, Int>()
+            let minMaxCorrect = (minX < maxX && minY < maxY)
             
-            for label in 0...currentLabel {
-                if label != 255 {
-                    labelUnionSetOfXArray[label] = parentArray.indexOf(labelsUnion.setOf(label) ?? 255)
+            let notToTall    = Double(maxY - minY) < Double(imageHeight!) * 0.75
+            let notToWide    = Double(maxX - minX) < Double(imageWidth ) * 0.25
+            let notToShort   = Double(maxY - minY) > Double(imageHeight!) * 0.08
+            let notToThin    = Double(maxX - minX) > Double(imageWidth ) * 0.01
+            
+            let notToSmall   = (maxX - minX)*(maxY - minY) > 100
+            let positionIsOK = minY != 0 && minX != 0 && maxY != Int(imageHeight! - 1) && maxX != Int(imageWidth - 1)
+            let aspectRatio  = Double(maxX - minX) / Double(maxY - minY)
+            
+            if minMaxCorrect && notToTall && notToWide && notToShort && notToThin && notToSmall && positionIsOK &&
+                aspectRatio < 1 {
+                let labelRect = CGRect(x: CGFloat(CGFloat(minX) - xMergeRadius), y: CGFloat(CGFloat(minY) - yMergeRadius), width: CGFloat(CGFloat(maxX - minX) + 2*xMergeRadius + 1), height: CGFloat(CGFloat(maxY - minY) + 2*yMergeRadius + 1))
+                mergeLabelRects.append(labelRect)
+            } else if minMaxCorrect && notToTall && notToShort && notToThin && notToSmall && positionIsOK && aspectRatio <= 2.5 && aspectRatio >= 1 {
+                
+                // MARK: Connected components: Find thinnest part of connected components
+                
+                guard minX + 2 < maxX - 2 else {
+                    continue
                 }
-            }
-
-            for (_, yPixelInfo) in yPixelInfoStride {
-                for (_, xPixelInfo) in xPixelInfoStride {
-                    let pixelInfo  = yPixelInfo + xPixelInfo
-                    let luminosity = data[pixelInfo]
-                    
-                    if luminosity != 255 {
-                        data[pixelInfo] = UInt16(labelUnionSetOfXArray[luminosity] ?? 255)
-                    }
-                    
-                }
-            }
-            
-            //MARK: MinX, MaxX, MinY, MaxY
-            
-            var minMaxXYLabelDict = Dictionary<UInt16, (minX: Int, maxX: Int, minY: Int, maxY: Int)>()
-            
-            for label in 0..<parentArray.count {
-                minMaxXYLabelDict[UInt16(label)] = (minX: Int(inputImageWidth), maxX: 0, minY: Int(inputImageHeight), maxY: 0)
-            }
-            
-            for (y, yPixelInfo) in yPixelInfoStride {
-                for (x, xPixelInfo) in xPixelInfoStride {
-                    let pixelInfo  = yPixelInfo + xPixelInfo
-                    let luminosity = data[pixelInfo]
-                    
-                    if luminosity != 255 {
-                        
-                        var value = minMaxXYLabelDict[luminosity]!
-                        
-                        value.minX = min(value.minX, x)
-                        value.maxX = max(value.maxX, x)
-                        value.minY = min(value.minY, y)
-                        value.maxY = max(value.maxY, y)
-                        
-                        minMaxXYLabelDict[luminosity] = value
-                        
-                    }
-                    
-                }
-            }
-            
-            //MARK: Merge labels
-            
-            var mergeUnion = UnionFind<UInt16>()
-            var mergeLabelRects = [CGRect]()
-            
-            let xMergeRadius:CGFloat = 1
-            let yMergeRadius:CGFloat = 3
-            
-            for label in minMaxXYLabelDict.keys {
-                let value = minMaxXYLabelDict[label]!
                 
-                let minX = value.minX
-                let maxX = value.maxX
-                let minY = value.minY
-                let maxY = value.maxY
+                let transposedData = Array(data[minY...maxY].map({ $0[(minX + 2)...(maxX - 2)]})).transpose() // [y][x] -> [x][y]
+                let reducedMaxIndexArray = transposedData.map({ $0.reduce(0, { UInt32($0) + UInt32($1) }) })
+                let maxIndex = reducedMaxIndexArray.enumerated().max(by: { $0.1 < $1.1})?.0 ?? 0
                 
-                //Filter blobs
+                let cutXPosition   = minX + 2 + maxIndex
                 
-                let minMaxCorrect = (minX < maxX && minY < maxY)
-                let correctFormat:Bool = {
-                    if (maxY - minY) != 0 {
-                        return Double(maxX - minX)/Double(maxY - minY) < 1.6
-                    } else {
-                        return false
-                    }
-                }()
+                let firstLabelRect = CGRect(x: CGFloat(CGFloat(minX) - xMergeRadius), y: CGFloat(CGFloat(minY) - yMergeRadius), width: CGFloat(CGFloat(maxIndex) + 2 * xMergeRadius), height: CGFloat(CGFloat(maxY - minY) + 2 * yMergeRadius))
                 
-                let notToTall    = Double(maxY - minY) < Double(inputImage.size.height) * 0.75
-                let notToWide    = Double(maxX - minX) < Double(inputImage.size.width ) * 0.25
-                let notToShort   = Double(maxY - minY) > Double(inputImage.size.height) * 0.25
-                let notToThin    = Double(maxX - minX) > Double(inputImage.size.width ) * 0.01
+                let secondLabelRect = CGRect(x: CGFloat(CGFloat(cutXPosition) - xMergeRadius), y: CGFloat(CGFloat(minY) - yMergeRadius), width: CGFloat(CGFloat(Int(maxX - minX) - maxIndex) + 2 * xMergeRadius), height: CGFloat(CGFloat(maxY - minY) + 2 * yMergeRadius))
                 
-                let notToSmall   = (maxX - minX)*(maxY - minY) > 100
-                
-                let positionIsOK = minY != 0 && minX != 0 && maxY != Int(inputImageHeight - 1) && maxX != Int(inputImageWidth - 1)
-                
-                if minMaxCorrect && correctFormat && notToTall && notToWide && notToShort && notToThin && notToSmall && positionIsOK{
-                    let labelRect = CGRectMake(CGFloat(CGFloat(minX) - xMergeRadius), CGFloat(CGFloat(minY) - yMergeRadius), CGFloat(CGFloat(maxX - minX) + 2*xMergeRadius + 1), CGFloat(CGFloat(maxY - minY) + 2*yMergeRadius + 1))
-                    mergeUnion.addSetWith(UInt16(label))
+                if firstLabelRect.width >= 5 + (2 * xMergeRadius) && secondLabelRect.width >= 5 + (2 * xMergeRadius) {
+                    mergeLabelRects.append(firstLabelRect)
+                    mergeLabelRects.append(secondLabelRect)
+                } else {
+                    let labelRect = CGRect(x: CGFloat(CGFloat(minX) - xMergeRadius), y: CGFloat(CGFloat(minY) - yMergeRadius), width: CGFloat(CGFloat(maxX - minX) + 2*xMergeRadius + 1), height: CGFloat(CGFloat(maxY - minY) + 2*yMergeRadius + 1))
                     mergeLabelRects.append(labelRect)
                 }
-            }
-            
-            for rectOneIndex in 0..<mergeLabelRects.count {
-                for rectTwoIndex in 0..<mergeLabelRects.count {
-                    if mergeLabelRects[rectOneIndex].intersects(mergeLabelRects[rectTwoIndex]) && rectOneIndex != rectTwoIndex{
-                        mergeUnion.unionSetsContaining(UInt16(rectOneIndex), and: UInt16(rectTwoIndex))
-                        mergeLabelRects[rectOneIndex].unionInPlace(mergeLabelRects[rectTwoIndex])
-                    }
-                }
-            }
-            
-            var outputImages = [(OCRImage, CGRect)]()
-            
-            //MARK: Crop image to blob
-            
-            for rect in mergeLabelRects {
-                let cropRect = rect.insetBy(dx: CGFloat(xMergeRadius), dy: CGFloat(yMergeRadius))
                 
-                if let croppedCGImage = CGImageCreateWithImageInRect(cgImage, cropRect) {
-                    
-                    #if os(iOS)
-                        let croppedImage = UIImage(CGImage: croppedCGImage)
-                    #else
-                        let croppedImage = NSImage(CGImage: croppedCGImage, size: cropRect.size)
-                    #endif
-                    
-                    outputImages.append((croppedImage, cropRect))
+            }
+            
+        }
+        
+        //Merge rects
+        
+        var filteredMergeLabelRects = [CGRect]()
+        
+        for rect in mergeLabelRects {
+            
+            var intersectCount = 0
+            
+            for (filteredRectIndex, filteredRect) in filteredMergeLabelRects.enumerated() {
+                if rect.intersects(filteredRect) {
+                    intersectCount += 1
+                    filteredMergeLabelRects[filteredRectIndex] = filteredRect.union(rect)
                 }
             }
             
-            outputImages.sortInPlace({return $0.0.1.origin.x < $0.1.1.origin.x})
-            return outputImages
-        } else {
-            return []
+            if intersectCount == 0 {
+                filteredMergeLabelRects.append(rect)
+            }
         }
+        
+        mergeLabelRects = filteredMergeLabelRects
+        
+        //Filter rects: - Not to small
+        
+        let insetMergeLabelRects = mergeLabelRects.map({return $0.insetBy(dx: CGFloat(xMergeRadius), dy: CGFloat(yMergeRadius))})
+        filteredMergeLabelRects.removeAll()
+        
+        for rect in insetMergeLabelRects {
+            let widthOK  = rect.size.width  >= 7
+            let heightOK = rect.size.height >= 14
+            
+            if widthOK && heightOK {
+                filteredMergeLabelRects.append(rect)
+            }
+        }
+        
+        mergeLabelRects = filteredMergeLabelRects
+        
+        var outputImages = [(OCRImage, CGRect)]()
+        
+        //MARK: Crop image to blob
+        
+        for rect in mergeLabelRects {
+            
+            if let croppedCGImage = cgImage?.cropping(to: rect) {
+                
+                #if os(iOS)
+                    let croppedImage = UIImage(cgImage: croppedCGImage)
+                #else
+                    let croppedImage = NSImage(cgImage: croppedCGImage, size: rect.size)
+                #endif
+                
+                outputImages.append((croppedImage, rect))
+            }
+        }
+        outputImages.sort { $0.1.origin.x < $1.1.origin.x }
+        return outputImages
+        
     }
     
     /**
@@ -433,19 +482,19 @@ public class SwiftOCR {
      
      */
     
-    internal func resizeBlobs(blobImages: [OCRImage]) -> [OCRImage] {
+    internal func resizeBlobs(_ blobImages: [OCRImage]) -> [OCRImage] {
         
         var resizedBlobs = [OCRImage]()
         
         for blobImage in blobImages {
-            let cropSize = CGSizeMake(16, 20)
+            let cropSize = CGSize(width: 16, height: 20)
             
             //Downscale
             #if os(iOS)
-                let cgImage   = blobImage.CGImage
+                let cgImage   = blobImage.cgImage
             #else
-                let bitmapRep = NSBitmapImageRep(data: blobImage.TIFFRepresentation!)!
-                let cgImage   = bitmapRep.CGImage
+                let bitmapRep = NSBitmapImageRep(data: blobImage.tiffRepresentation!)!
+                let cgImage   = bitmapRep.cgImage
             #endif
             
             let width = cropSize.width
@@ -453,20 +502,20 @@ public class SwiftOCR {
             let bitsPerComponent = 8
             let bytesPerRow = 0
             let colorSpace = CGColorSpaceCreateDeviceRGB()
-            let bitmapInfo = CGImageAlphaInfo.NoneSkipLast.rawValue
+            let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
             
-            let context = CGBitmapContextCreate(nil, Int(width), Int(height), bitsPerComponent, bytesPerRow, colorSpace, bitmapInfo)
+            let context = CGContext(data: nil, width: Int(width), height: Int(height), bitsPerComponent: bitsPerComponent, bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: bitmapInfo)
             
-            CGContextSetInterpolationQuality(context, CGInterpolationQuality.None)
+            context!.interpolationQuality = CGInterpolationQuality.none
             
-            CGContextDrawImage(context, CGRectMake(0, 0, cropSize.width, cropSize.height), cgImage)
+            context?.draw(cgImage!, in: CGRect(x: 0, y: 0, width: cropSize.width, height: cropSize.height))
             
-            let resizedCGImage = CGImageCreateWithImageInRect(CGBitmapContextCreateImage(context), CGRectMake(0, 0, cropSize.width, cropSize.height))!
+            let resizedCGImage = context?.makeImage()?.cropping(to: CGRect(x: 0, y: 0, width: cropSize.width, height: cropSize.height))!
             
             #if os(iOS)
-                let resizedOCRImage = UIImage(CGImage: resizedCGImage)
+                let resizedOCRImage = UIImage(cgImage: resizedCGImage!)
             #else
-                let resizedOCRImage = NSImage(CGImage: resizedCGImage, size: cropSize)
+                let resizedOCRImage = NSImage(cgImage: resizedCGImage!, size: cropSize)
             #endif
             
             resizedBlobs.append(resizedOCRImage)
@@ -485,9 +534,9 @@ public class SwiftOCR {
      
      */
     
-    public func preprocessImageForOCR(image:OCRImage?) -> OCRImage? {
+    open func preprocessImageForOCR(_ image:OCRImage) -> OCRImage {
         
-        func getDodgeBlendImage(inputImage: OCRImage) -> OCRImage {
+        func getDodgeBlendImage(_ inputImage: OCRImage) -> OCRImage {
             let image  = GPUImagePicture(image: inputImage)
             let image2 = GPUImagePicture(image: inputImage)
             
@@ -495,13 +544,13 @@ public class SwiftOCR {
             
             let grayFilter      = GPUImageGrayscaleFilter()
             let invertFilter    = GPUImageColorInvertFilter()
-            let blurFilter      = GPUImageSingleComponentGaussianBlurFilter()
+            let blurFilter      = GPUImageBoxBlurFilter()
             let opacityFilter   = GPUImageOpacityFilter()
             
-            blurFilter.blurRadiusInPixels = 10
+            blurFilter.blurRadiusInPixels = 9
             opacityFilter.opacity         = 0.93
             
-            image       .addTarget(grayFilter)
+            image?       .addTarget(grayFilter)
             grayFilter  .addTarget(invertFilter)
             invertFilter.addTarget(blurFilter)
             blurFilter  .addTarget(opacityFilter)
@@ -512,7 +561,7 @@ public class SwiftOCR {
             
             let grayFilter2 = GPUImageGrayscaleFilter()
             
-            image2.addTarget(grayFilter2)
+            image2?.addTarget(grayFilter2)
             
             grayFilter2.useNextFrameForImageCapture()
             
@@ -521,69 +570,64 @@ public class SwiftOCR {
             let dodgeBlendFilter = GPUImageColorDodgeBlendFilter()
             
             grayFilter2.addTarget(dodgeBlendFilter)
-            image2.processImage()
+            image2?.processImage()
             
             opacityFilter.addTarget(dodgeBlendFilter)
             
             dodgeBlendFilter.useNextFrameForImageCapture()
-            image.processImage()
-
-            var processedImage:OCRImage? = dodgeBlendFilter.imageFromCurrentFramebufferWithOrientation(UIImageOrientation.Up)
-
+            image?.processImage()
+            
+            var processedImage:OCRImage? = dodgeBlendFilter.imageFromCurrentFramebuffer(with: UIImage.Orientation.up)
+            
             while processedImage?.size == CGSize.zero || processedImage == nil {
                 dodgeBlendFilter.useNextFrameForImageCapture()
-                image.processImage()
-                processedImage = dodgeBlendFilter.imageFromCurrentFramebufferWithOrientation(.Up)
+                image?.processImage()
+                processedImage = dodgeBlendFilter.imageFromCurrentFramebuffer(with: .up)
             }
             
             return processedImage!
         }
         
-        if let image = image ?? self.image {
-            
-            let dodgeBlendImage        = getDodgeBlendImage(image)
-            let picture                = GPUImagePicture(image: dodgeBlendImage)
-            
-            let medianFilter           = GPUImageMedianFilter()
-            let openingFilter          = GPUImageOpeningFilter()
-            let biliteralFilter        = GPUImageBilateralFilter()
-            let firstBrightnessFilter  = GPUImageBrightnessFilter()
-            let contrastFilter         = GPUImageContrastFilter()
-            let secondBrightnessFilter = GPUImageBrightnessFilter()
-            let thresholdFilter        = GPUImageLuminanceThresholdFilter()
-            
-            biliteralFilter.texelSpacingMultiplier      = 0.8
-            biliteralFilter.distanceNormalizationFactor = 1.6
-            firstBrightnessFilter.brightness            = -0.28
-            contrastFilter.contrast                     = 2.35
-            secondBrightnessFilter.brightness           = -0.08
-            biliteralFilter.texelSpacingMultiplier      = 0.8
-            biliteralFilter.distanceNormalizationFactor = 1.6
-            thresholdFilter.threshold                   = 0.5
-            
-            picture               .addTarget(medianFilter)
-            medianFilter          .addTarget(openingFilter)
-            openingFilter         .addTarget(biliteralFilter)
-            biliteralFilter       .addTarget(firstBrightnessFilter)
-            firstBrightnessFilter .addTarget(contrastFilter)
-            contrastFilter        .addTarget(secondBrightnessFilter)
-            secondBrightnessFilter.addTarget(thresholdFilter)
-            
+        let dodgeBlendImage        = getDodgeBlendImage(image)
+        let picture                = GPUImagePicture(image: dodgeBlendImage)
+        
+        let medianFilter           = GPUImageMedianFilter()
+        let openingFilter          = GPUImageOpeningFilter()
+        let biliteralFilter        = GPUImageBilateralFilter()
+        let firstBrightnessFilter  = GPUImageBrightnessFilter()
+        let contrastFilter         = GPUImageContrastFilter()
+        let secondBrightnessFilter = GPUImageBrightnessFilter()
+        let thresholdFilter        = GPUImageLuminanceThresholdFilter()
+        
+        biliteralFilter.texelSpacingMultiplier      = 0.8
+        biliteralFilter.distanceNormalizationFactor = 1.6
+        firstBrightnessFilter.brightness            = -0.28
+        contrastFilter.contrast                     = 2.35
+        secondBrightnessFilter.brightness           = -0.08
+        biliteralFilter.texelSpacingMultiplier      = 0.8
+        biliteralFilter.distanceNormalizationFactor = 1.6
+        thresholdFilter.threshold                   = 0.7
+        
+        picture?               .addTarget(medianFilter)
+        medianFilter          .addTarget(openingFilter)
+        openingFilter         .addTarget(biliteralFilter)
+        biliteralFilter       .addTarget(firstBrightnessFilter)
+        firstBrightnessFilter .addTarget(contrastFilter)
+        contrastFilter        .addTarget(secondBrightnessFilter)
+        secondBrightnessFilter.addTarget(thresholdFilter)
+        
+        thresholdFilter.useNextFrameForImageCapture()
+        picture?.processImage()
+        
+        var processedImage:OCRImage? = thresholdFilter.imageFromCurrentFramebuffer(with: UIImage.Orientation.up)
+        
+        while processedImage == nil || processedImage?.size == CGSize.zero {
             thresholdFilter.useNextFrameForImageCapture()
-            picture.processImage()
-            
-            var processedImage:OCRImage? = thresholdFilter.imageFromCurrentFramebufferWithOrientation(UIImageOrientation.Up)
-            
-            while processedImage?.size == CGSize.zero || processedImage == nil{
-                thresholdFilter.useNextFrameForImageCapture()
-                picture.processImage()
-                processedImage = thresholdFilter.imageFromCurrentFramebufferWithOrientation(.Up)
-            }
-            
-            return processedImage!
-        } else {
-            return nil
+            picture?.processImage()
+            processedImage = thresholdFilter.imageFromCurrentFramebuffer(with: .up)
         }
+        
+        return processedImage!
         
     }
     
@@ -597,7 +641,7 @@ public class SwiftOCR {
      
      */
     
-    internal func convertImageToFloatArray(image: OCRImage, resize: Bool = true) -> [Float] {
+    internal func convertImageToFloatArray(_ image: OCRImage, resize: Bool = true) -> [Float] {
         
         let resizedBlob: OCRImage = {
             if resize {
@@ -608,26 +652,28 @@ public class SwiftOCR {
         }()
         
         #if os(iOS)
-            let pixelData  = CGDataProviderCopyData(CGImageGetDataProvider(resizedBlob.CGImage))
+            let pixelData  = resizedBlob.cgImage?.dataProvider?.data
             let bitmapData: UnsafePointer<UInt8> = CFDataGetBytePtr(pixelData)
-            let cgImage    = resizedBlob.CGImage
+            let cgImage    = resizedBlob.cgImage
         #else
-            let bitmapRep  = NSBitmapImageRep(data: resizedBlob.TIFFRepresentation!)!
-            let bitmapData = bitmapRep.bitmapData
-            let cgImage    = bitmapRep.CGImage
+            let bitmapRep  = NSBitmapImageRep(data: resizedBlob.tiffRepresentation!)!
+            let bitmapData = bitmapRep.bitmapData!
+            let cgImage    = bitmapRep.cgImage
         #endif
         
-        let numberOfComponents = CGImageGetBitsPerPixel(cgImage) / CGImageGetBitsPerComponent(cgImage)
+        let numberOfComponents = (cgImage?.bitsPerPixel)! / (cgImage?.bitsPerComponent)!
         
         var imageData = [Float]()
         
         let height = Int(resizedBlob.size.height)
         let width  = Int(resizedBlob.size.width)
         
-        for yPixelInfo in 0.stride(to: height*width*numberOfComponents, by: width*numberOfComponents) {
-            for xPixelInfo in 0.stride(to: width*numberOfComponents, by: numberOfComponents) {
+        for yPixelInfo in stride(from: 0, to: height*width*numberOfComponents, by: width*numberOfComponents) {
+            for xPixelInfo in stride(from: 0, to: width*numberOfComponents, by: numberOfComponents) {
                 let pixelInfo: Int = yPixelInfo + xPixelInfo
+                
                 imageData.append(bitmapData[pixelInfo] < 127 ? 0 : 1)
+                
             }
         }
         
@@ -640,6 +686,8 @@ public class SwiftOCR {
     
 }
 
+// MARK: SwiftOCRDelegate
+
 public protocol SwiftOCRDelegate: class {
     
     /**
@@ -651,23 +699,25 @@ public protocol SwiftOCRDelegate: class {
      
      */
     
-    func preprocessImageForOCR(inputImage: OCRImage) -> OCRImage?
+    func preprocessImageForOCR(_ inputImage: OCRImage) -> OCRImage?
     
 }
 
 extension SwiftOCRDelegate {
-    func preprocessImageForOCR(inputImage: OCRImage) -> OCRImage? {
+    func preprocessImageForOCR(_ inputImage: OCRImage) -> OCRImage? {
         return nil
     }
 }
 
+// MARK: SwiftOCRRecognizedBlob
+
 public struct SwiftOCRRecognizedBlob {
     
-    let charactersWithConfidence: [(character: Character, confidence: Float)]!
-    let boundingBox:              CGRect!
+    public let charactersWithConfidence: [(character: Character, confidence: Float)]!
+    public let boundingBox:              CGRect!
     
     init(charactersWithConfidence: [(character: Character, confidence: Float)]!, boundingBox: CGRect) {
-        self.charactersWithConfidence = charactersWithConfidence.sort({return $0.0.confidence > $0.1.confidence})
+        self.charactersWithConfidence = charactersWithConfidence.sorted(by: { $0.confidence > $1.confidence })
         self.boundingBox = boundingBox
     }
     
